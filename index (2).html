@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ZiShu Admin</title>
+<style>
+:root{--bg:#05050a;--sf:#14141c;--sf2:#1c1c28;--bd:#2a2a3c;--tx:#f2f2f7;--mu:#8b8ba0;--g:linear-gradient(135deg,#22d3ee,#a855f7,#ec4899);--rd:#7a1f2b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,sans-serif}
+header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--bd)}
+header b{font-size:20px;background:var(--g);-webkit-background-clip:text;background-clip:text;color:transparent}
+nav{display:flex;gap:6px;padding:10px 16px;overflow-x:auto;border-bottom:1px solid var(--bd)}
+nav button{flex:none;background:var(--sf);color:var(--mu);border:1px solid var(--bd);border-radius:20px;padding:8px 16px;font-size:15px}
+nav button.on{color:#fff;border-color:transparent;background:var(--g)}
+main,.wrap{padding:16px;max-width:760px;margin:0 auto}
+h2{margin:6px 0 12px;font-size:20px}h3{margin:22px 0 10px;font-size:17px}
+label{display:block;margin:12px 0 5px;color:var(--mu);font-size:14px}
+input,select,textarea{width:100%;background:var(--sf);color:var(--tx);border:1px solid var(--bd);border-radius:10px;padding:12px;font-size:16px;font-family:inherit}
+textarea{min-height:90px}
+label.chk{display:inline-flex;align-items:center;gap:8px;margin:4px 14px 4px 0;color:var(--tx);font-size:16px}
+label.chk input{width:22px;height:22px;flex:none}
+.btn,.btn2,.del{border:0;border-radius:10px;padding:12px 18px;font-size:16px;color:#fff;background:var(--g)}
+.btn2{background:var(--sf2);border:1px solid var(--bd)}
+.del{background:var(--rd)}
+.sm{padding:8px 12px;font-size:15px;border-radius:8px}
+.bar{display:flex;gap:8px;margin-bottom:12px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+.item{display:flex;gap:12px;align-items:center;background:var(--sf);border:1px solid var(--bd);border-radius:12px;padding:10px;margin-bottom:8px}
+.grow{flex:1;min-width:0}.grow b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.th{width:42px;height:56px;border-radius:6px;background:var(--sf2);object-fit:cover;flex:none}
+.muted{color:var(--mu);font-size:14px}
+.chip{font-size:12px;padding:2px 8px;border-radius:10px;background:var(--sf2)}
+.chip.published{background:#14532d}.chip.draft{background:#4a3b0e}
+.warn{color:#fbbf24;font-size:13px}
+.box{background:var(--sf);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-top:10px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#toast{position:fixed;left:16px;right:16px;bottom:18px;padding:12px 16px;border-radius:10px;background:#14532d;display:none;z-index:9}
+#toast.bad{background:var(--rd)}
+</style>
+</head>
+<body>
+<div id="login" class="wrap">
+  <h2>ZiShu Admin</h2>
+  <label for="tk">Admin token</label>
+  <input id="tk" type="password" autocomplete="off">
+  <div class="row"><button class="btn" onclick="doLogin()">Login</button></div>
+</div>
+<div id="app" hidden>
+  <header><b>ZiShu Admin</b><button class="btn2 sm" onclick="logout()">Logout</button></header>
+  <nav id="nav">
+    <button data-p="titles" onclick="go('titles')">Titles</button>
+    <button data-p="banners" onclick="go('banners')">Banners</button>
+    <button data-p="rows" onclick="go('rows')">Rows</button>
+    <button data-p="popular" onclick="go('popular')">Popular</button>
+  </nav>
+  <main id="main"></main>
+</div>
+<div id="toast"></div>
+<script>
+const API='https://zishu-api-01.zishutv29.workers.dev';
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function tok(){try{return localStorage.getItem('zs_token')||''}catch(e){return ''}}
+function setTok(v){try{localStorage.setItem('zs_token',v)}catch(e){}}
+function clrTok(){try{localStorage.removeItem('zs_token')}catch(e){}}
+let tt;
+function toast(m,bad){const t=$('#toast');t.textContent=m;t.className=bad?'bad':'';t.style.display='block';clearTimeout(tt);tt=setTimeout(()=>t.style.display='none',bad?6000:2200)}
+function err(e){console.error(e);toast(e&&e.message?e.message:String(e),true)}
+
+async function api(method,path,body){
+  const h={'x-admin-token':tok()};
+  if(body!==undefined)h['content-type']='application/json';
+  const r=await fetch(API+'/admin/'+path,{method,headers:h,body:body===undefined?undefined:JSON.stringify(body)});
+  const t=await r.text();let j=null;
+  try{j=t?JSON.parse(t):null}catch(e){j=t}
+  if(!r.ok){const m=j&&typeof j==='object'?(j.error||j.message||JSON.stringify(j)):(j||'');throw new Error('Error '+r.status+(m?': '+m:''))}
+  return j;
+}
+const q=(t,qs)=>api('GET',t+(qs?'?'+qs:''));
+const enc=encodeURIComponent;
+
+/* ---------- login ---------- */
+async function doLogin(){
+  const v=$('#tk').value.trim();if(!v)return;
+  setTok(v);
+  try{await q('categories','select=id&limit=1');start()}
+  catch(e){clrTok();err(e)}
+}
+function logout(){clrTok();location.reload()}
+function start(){$('#login').hidden=true;$('#app').hidden=false;go('titles')}
+
+/* ---------- base data ---------- */
+let S={titles:[],sections:[],cats:[]},cur='titles';
+async function loadBase(){
+  const r=await Promise.all([
+    q('categories','select=*&order=sort_order'),
+    q('titles','select=id,name,type,status,poster_key,background_key&order=created_at.desc'),
+    q('sections','select=*&order=sort_order')
+  ]);
+  S.cats=r[0]||[];S.titles=r[1]||[];S.sections=r[2]||[];
+}
+const catName=id=>{if(!id)return 'For You';const c=S.cats.find(x=>x.id===id);return c?c.name:'?'};
+const titleOf=id=>S.titles.find(t=>t.id===id);
+const thumb=u=>u?`<img class="th" loading="lazy" src="${esc(u)}" onerror="this.style.visibility='hidden'">`:'<div class="th"></div>';
+const opt=(v,l,sel)=>`<option value="${esc(v)}" ${sel?'selected':''}>${esc(l)}</option>`;
+const val=id=>{const e=document.getElementById(id);return e?e.value.trim():''};
+const nul=v=>v===''?null:v;
+const num=v=>v===''?null:Number(v);
+const checked=name=>[...document.querySelectorAll('input[name="'+name+'"]:checked')].map(x=>x.value);
+const slugify=s=>s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')||'title';
+const stamp=()=>-Math.floor(Date.now()/1000);
+
+async function go(p){
+  cur=p;
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.p===p));
+  $('#main').innerHTML='<p class="muted">Loading…</p>';
+  try{await loadBase();await PAGES[p]()}catch(e){err(e);$('#main').innerHTML='<p class="muted">Load nahi hua. Token ya net check karo.</p>'}
+}
+
+/* renumber helper: list = rows in new order, filt(row) -> filter string */
+async function renumber(table,list,filt){
+  for(let i=0;i<list.length;i++){
+    if(list[i].sort_order!==i){await api('PATCH',table+'?'+filt(list[i]),{sort_order:i});list[i].sort_order=i}
+  }
+}
+function moved(list,i,d){const j=i+d;if(j<0||j>=list.length)return null;const a=list.slice();[a[i],a[j]]=[a[j],a[i]];return a}
+
+/* ================= TITLES ================= */
+function pgTitles(){
+  $('#main').innerHTML=`<div class="bar"><input id="ts" placeholder="Title search…" oninput="filterT()"><button class="btn" onclick="titleForm()">+ New</button></div><div id="tl"></div>`;
+  filterT();
+}
+function filterT(){
+  const v=($('#ts').value||'').toLowerCase();
+  const l=S.titles.filter(t=>(t.name||'').toLowerCase().includes(v));
+  $('#tl').innerHTML=l.map(t=>`<div class="item" onclick="titleForm('${t.id}')">${thumb(t.poster_key)}<div class="grow"><b>${esc(t.name)}</b><div class="muted">${esc(t.type)} · <span class="chip ${esc(t.status)}">${esc(t.status)}</span></div></div></div>`).join('')||'<p class="muted">Koi title nahi</p>';
+}
+
+const DEF_LANGS=['Hindi','English','Punjabi','Tamil','Telugu','Korean','Chinese','Japanese'];
+let F={id:null,rows:[],saving:false};
+
+async function titleForm(id){
+  $('#main').innerHTML='<p class="muted">Loading…</p>';
+  try{
+    let t={type:'SERIES',status:'draft',is_free:false},langs=[],tcats=[],rows=[],eps=[];
+    const allL=await q('title_languages','select=language');
+    if(id){
+      const r=await Promise.all([
+        q('titles','id=eq.'+id+'&select=*'),
+        q('title_languages','title_id=eq.'+id+'&select=language'),
+        q('title_categories','title_id=eq.'+id+'&select=category_id'),
+        q('section_items','title_id=eq.'+id+'&select=section_id'),
+        q('episodes','title_id=eq.'+id+'&select=*&order=season_number,episode_number')
+      ]);
+      t=r[0][0];langs=r[1].map(x=>x.language);tcats=r[2].map(x=>x.category_id);rows=r[3].map(x=>x.section_id);eps=r[4];
+    }
+    F={id:id||null,rows:rows,saving:false};
+    const types=['SERIES','MOVIE'];if(t.type&&!types.includes(t.type))types.push(t.type);
+    const sts=['draft','published'];if(t.status&&!sts.includes(t.status))sts.push(t.status);
+    const all=[...new Set([...DEF_LANGS,...(allL||[]).map(x=>x.language),...langs])];
+    const f=(l,i,v,ty)=>`<label for="${i}">${l}</label><input id="${i}" type="${ty||'text'}" value="${esc(v)}">`;
+    $('#main').innerHTML=`
+    <button class="btn2 sm" onclick="go('titles')">← Back</button>
+    <h2>${id?'Edit title':'New title'}</h2>
+    <label for="f_type">Type</label>
+    <select id="f_type">${types.map(x=>opt(x,x,x===t.type)).join('')}</select>
+    ${f('Name','f_name',t.name)}
+    <div class="grid2"><div>${f('Year','f_year',t.year,'number')}</div><div>${f('Rating (0-10)','f_rating',t.rating,'number')}</div></div>
+    ${f('Country','f_country',t.country)}
+    <label for="f_intro">Intro</label><textarea id="f_intro">${esc(t.intro)}</textarea>
+    ${f('Cast (comma se)','f_cast',t.cast_names)}
+    ${f('Director','f_director',t.director)}
+    ${f('Badge (New, Trending, Free…)','f_badge',t.badge)}
+    <label class="chk" style="margin-top:14px"><input type="checkbox" id="f_free" ${t.is_free?'checked':''}> Free to watch</label>
+    <label for="f_status">Status</label>
+    <select id="f_status">${sts.map(x=>opt(x,x,x===t.status)).join('')}</select>
+
+    <h3>Images (URL)</h3>
+    ${f('Poster','f_poster',t.poster_key)}
+    ${f('Background (banner)','f_bg',t.background_key)}
+    ${f('Character PNG (banner)','f_char',t.character_key)}
+    ${f('Title logo PNG','f_logo',t.title_logo_key)}
+
+    ${id?'':`<h3>Pehla video (optional)</h3>
+    <p class="muted">Movie ho to bas yahi. Title save hote hi pehla episode ban jayega.</p>
+    ${f('Video URL','v_url','')}
+    <label for="v_type">Source type</label><select id="v_type"><option>MP4</option><option>HLS</option><option>DASH</option><option>LIVE</option></select>
+    ${f('Duration (seconds)','v_dur','','number')}`}
+
+    <h3>Languages (badge)</h3>
+    <div id="langbox">${all.map(l=>`<label class="chk"><input type="checkbox" name="lang" value="${esc(l)}" ${langs.includes(l)?'checked':''}>${esc(l)}</label>`).join('')}</div>
+    <div class="bar" style="margin-top:8px"><input id="newlang" placeholder="Nayi language (jaise Bhojpuri)"><button class="btn2" onclick="addLang()">Add</button></div>
+
+    <h3>Tabs (categories)</h3>
+    <div>${S.cats.map(c=>`<label class="chk"><input type="checkbox" name="cat" value="${c.id}" ${tcats.includes(c.id)?'checked':''}>${esc(c.name)}</label>`).join('')||'<span class="muted">Koi tab nahi</span>'}</div>
+
+    <h3>Kin rows me dikhana hai</h3>
+    <div>${S.sections.map(s=>`<label class="chk"><input type="checkbox" name="row" value="${s.id}" ${rows.includes(s.id)?'checked':''}>${esc(s.name)} <span class="muted">(${esc(catName(s.category_id))})</span></label>`).join('')||'<span class="muted">Pehle Rows page me row banao</span>'}</div>
+
+    <div class="row"><button class="btn" id="savebtn" onclick="saveTitle()">Save</button>${id?'<button class="del" onclick="delTitle()">Delete</button>':''}</div>
+    ${id?`<h3>Episodes</h3><p class="muted">Movie ho to sirf 1 episode (video) rakho.</p><div id="eplist"></div><div id="epform"></div>`:'<p class="muted">Episodes add karne ke liye pehle title Save karo.</p>'}
+    <div style="height:70px"></div>`;
+    if(id){window._eps=eps;renderEps()}
+  }catch(e){err(e);go('titles')}
+}
+function addLang(){
+  const v=val('newlang');if(!v)return;
+  const ex=[...document.querySelectorAll('input[name="lang"]')].find(x=>x.value.toLowerCase()===v.toLowerCase());
+  if(ex){ex.checked=true}else{
+    const l=document.createElement('label');l.className='chk';
+    l.innerHTML=`<input type="checkbox" name="lang" value="${esc(v)}" checked>${esc(v)}`;
+    $('#langbox').appendChild(l);
+  }
+  $('#newlang').value='';
+}
+async function saveTitle(){
+  if(F.saving)return;
+  const name=val('f_name');if(!name){toast('Name likho',true);return}
+  F.saving=true;$('#savebtn').disabled=true;$('#savebtn').textContent='Saving…';
+  try{
+    const p={
+      type:val('f_type'),name:name,year:num(val('f_year')),rating:num(val('f_rating')),
+      country:nul(val('f_country')),intro:nul(val('f_intro')),cast_names:nul(val('f_cast')),director:nul(val('f_director')),
+      badge:nul(val('f_badge')),is_free:$('#f_free').checked,status:val('f_status'),
+      poster_key:nul(val('f_poster')),background_key:nul(val('f_bg')),character_key:nul(val('f_char')),title_logo_key:nul(val('f_logo'))
+    };
+    let id=F.id;const wasNew=!id;
+    if(id){await api('PATCH','titles?id=eq.'+id,p)}
+    else{
+      p.slug=slugify(name)+'-'+Math.random().toString(36).slice(2,6);
+      await api('POST','titles',p);
+      const r=await q('titles','slug=eq.'+enc(p.slug)+'&select=id');
+      if(!r||!r[0])throw new Error('Title bana, par id nahi mili');
+      id=r[0].id;F.id=id;
+    }
+    if(wasNew&&val('v_url')){
+      await api('POST','episodes',{title_id:id,season_number:1,episode_number:1,source_type:val('v_type'),video_key:val('v_url'),duration_sec:num(val('v_dur')),is_free:$('#f_free').checked,status:'published'});
+    }
+    // languages
+    await api('DELETE','title_languages?title_id=eq.'+id);
+    const L=checked('lang');
+    if(L.length)await api('POST','title_languages',L.map(l=>({title_id:id,language:l})));
+    // tabs
+    await api('DELETE','title_categories?title_id=eq.'+id);
+    const C=checked('cat');
+    if(C.length)await api('POST','title_categories',C.map((c,i)=>({title_id:id,category_id:c,sort_order:i})));
+    // rows
+    const R=checked('row');
+    for(const s of R.filter(x=>!F.rows.includes(x)))await api('POST','section_items',{section_id:s,title_id:id,sort_order:stamp()});
+    for(const s of F.rows.filter(x=>!R.includes(x)))await api('DELETE','section_items?section_id=eq.'+s+'&title_id=eq.'+id);
+    toast('Saved ✓');
+    await loadBase();
+    titleForm(id);
+  }catch(e){err(e);F.saving=false;const b=$('#savebtn');if(b){b.disabled=false;b.textContent='Save'}}
+}
+async function delTitle(){
+  if(!confirm('Ye title pakka delete karna hai? (episodes, rows, banner sab se hat jayega)'))return;
+  try{
+    const id=F.id;
+    for(const t of ['title_languages','title_categories','section_items','banners','popular_searches','episodes'])
+      await api('DELETE',t+'?title_id=eq.'+id);
+    await api('DELETE','titles?id=eq.'+id);
+    toast('Deleted');go('titles');
+  }catch(e){err(e)}
+}
+
+/* ---- episodes ---- */
+function renderEps(){
+  const l=window._eps||[];
+  $('#eplist').innerHTML=l.map(e=>`<div class="item"><div class="grow"><b>S${e.season_number||1} E${e.episode_number||1} ${esc(e.name||'')}</b><div class="muted">${esc(e.source_type)} · ${esc(e.status)}${e.is_free?' · free':''}</div></div><button class="btn2 sm" onclick="epForm('${e.id}')">Edit</button><button class="del sm" onclick="delEp('${e.id}')">X</button></div>`).join('')||'<p class="muted">Abhi koi episode nahi</p>';
+  $('#epform').innerHTML=`<div class="row"><button class="btn2" onclick="epForm()">+ Add episode</button></div>`;
+}
+function epForm(id){
+  const e=(id&&window._eps.find(x=>x.id===id))||{season_number:1,episode_number:(window._eps||[]).length+1,source_type:'MP4',status:'published',is_free:false};
+  const st=['MP4','HLS','DASH','LIVE'];if(e.source_type&&!st.includes(e.source_type))st.push(e.source_type);
+  const ss=['published','draft'];if(e.status&&!ss.includes(e.status))ss.push(e.status);
+  const f=(l,i,v,ty)=>`<label for="${i}">${l}</label><input id="${i}" type="${ty||'text'}" value="${esc(v)}">`;
+  $('#epform').innerHTML=`<div class="box">
+    <div class="grid2"><div>${f('Season','e_s',e.season_number,'number')}</div><div>${f('Episode no.','e_n',e.episode_number,'number')}</div></div>
+    ${f('Episode name','e_name',e.name)}
+    <label for="e_type">Source type</label><select id="e_type">${st.map(x=>opt(x,x,x===e.source_type)).join('')}</select>
+    ${f('Video URL','e_url',e.video_key)}
+    ${f('Duration (seconds)','e_dur',e.duration_sec,'number')}
+    ${f('Thumbnail URL','e_thumb',e.thumbnail_key)}
+    <label class="chk" style="margin-top:12px"><input type="checkbox" id="e_free" ${e.is_free?'checked':''}> Free episode</label>
+    <label for="e_status">Status</label><select id="e_status">${ss.map(x=>opt(x,x,x===e.status)).join('')}</select>
+    <div class="row"><button class="btn" id="epsave" onclick="saveEp('${id||''}')">Save episode</button><button class="btn2" onclick="renderEps()">Cancel</button></div></div>`;
+}
+let epBusy=false;
+async function saveEp(id){
+  if(epBusy)return;
+  if(!val('e_url')){toast('Video URL likho',true);return}
+  epBusy=true;$('#epsave').disabled=true;
+  try{
+    const p={season_number:num(val('e_s'))||1,episode_number:num(val('e_n'))||1,name:nul(val('e_name')),source_type:val('e_type'),video_key:val('e_url'),duration_sec:num(val('e_dur')),thumbnail_key:nul(val('e_thumb')),is_free:$('#e_free').checked,status:val('e_status')};
+    if(id)await api('PATCH','episodes?id=eq.'+id,p);
+    else{p.title_id=F.id;await api('POST','episodes',p)}
+    window._eps=await q('episodes','title_id=eq.'+F.id+'&select=*&order=season_number,episode_number');
+    toast('Episode saved ✓');renderEps();
+  }catch(e){err(e);$('#epsave')&&($('#epsave').disabled=false)}
+  epBusy=false;
+}
+async function delEp(id){
+  if(!confirm('Episode delete karna hai?'))return;
+  try{await api('DELETE','episodes?id=eq.'+id);window._eps=window._eps.filter(x=>x.id!==id);renderEps()}catch(e){err(e)}
+}
+
+/* ================= BANNERS ================= */
+async function pgBanners(){
+  const b=await q('banners','select=*&order=sort_order');
+  window._bn=b;
+  const pub=S.titles.filter(t=>t.status==='published');
+  $('#main').innerHTML=`<h2>Banners</h2>
+  <p class="muted">Upar se neeche, isi order me app me aate hain.</p>
+  <div id="bl"></div>
+  <h3>Naya banner</h3>
+  <div class="box">
+    <label for="b_t">Title</label><select id="b_t">${pub.map(t=>opt(t.id,t.name)).join('')}</select>
+    <label class="chk" style="margin-top:12px"><input type="checkbox" id="b_fy" checked> For You me dikhao</label>
+    <label for="b_c">Ya kisi tab me</label>
+    <select id="b_c"><option value="">— koi nahi —</option>${S.cats.map(c=>opt(c.id,c.name)).join('')}</select>
+    <div class="row"><button class="btn" onclick="addBanner()">Add banner</button></div>
+  </div>`;
+  renderBanners();
+}
+function renderBanners(){
+  const l=window._bn;
+  $('#bl').innerHTML=l.map((b,i)=>{
+    const t=titleOf(b.title_id)||{name:'(deleted)'};
+    return `<div class="item">${thumb(t.background_key||t.poster_key)}<div class="grow"><b>${esc(t.name)}</b><div class="muted">${b.show_in_for_you?'For You':''}${b.show_in_for_you&&b.category_id?' + ':''}${b.category_id?esc(catName(b.category_id)):''}${b.is_active?'':' · OFF'}</div>${t.background_key?'':'<div class="warn">⚠ Background image nahi hai</div>'}</div>
+    <button class="btn2 sm" onclick="mvBanner(${i},-1)">↑</button><button class="btn2 sm" onclick="mvBanner(${i},1)">↓</button>
+    <button class="btn2 sm" onclick="togBanner('${b.id}',${!b.is_active})">${b.is_active?'ON':'OFF'}</button>
+    <button class="del sm" onclick="delBanner('${b.id}')">X</button></div>`}).join('')||'<p class="muted">Koi banner nahi</p>';
+}
+async function addBanner(){
+  const t=val('b_t');if(!t){toast('Title chuno',true);return}
+  const fy=$('#b_fy').checked,c=val('b_c');
+  if(!fy&&!c){toast('For You ya koi tab chuno',true);return}
+  try{
+    await api('POST','banners',{title_id:t,category_id:c||null,show_in_for_you:fy,sort_order:window._bn.length,is_active:true});
+    toast('Banner added ✓');go('banners');
+  }catch(e){err(e)}
+}
+async function mvBanner(i,d){
+  const a=moved(window._bn,i,d);if(!a)return;
+  try{await renumber('banners',a,r=>'id=eq.'+r.id);window._bn=a;renderBanners()}catch(e){err(e)}
+}
+async function togBanner(id,v){try{await api('PATCH','banners?id=eq.'+id,{is_active:v});go('banners')}catch(e){err(e)}}
+async function delBanner(id){if(!confirm('Banner hatana hai?'))return;try{await api('DELETE','banners?id=eq.'+id);go('banners')}catch(e){err(e)}}
+
+/* ================= ROWS (sections) ================= */
+function groups(){
+  const g=[{id:null,name:'For You'},...S.cats.map(c=>({id:c.id,name:c.name}))];
+  return g.map(x=>({...x,list:S.sections.filter(s=>(s.category_id||null)===x.id).sort((a,b)=>a.sort_order-b.sort_order)}));
+}
+function pgRows(){
+  $('#main').innerHTML=`<div class="bar"><h2 style="margin:0;flex:1">Rows</h2><button class="btn" onclick="rowForm()">+ New row</button></div>
+  ${groups().map(g=>`<h3>${esc(g.name)}</h3>`+(g.list.map((s,i)=>`<div class="item"><div class="grow"><b>${esc(s.name)}</b><div class="muted">${esc(s.layout)} · ${s.rows_per_step} line${s.is_active?'':' · OFF'}</div></div>
+    <button class="btn2 sm" onclick="mvRow('${g.id||''}',${i},-1)">↑</button><button class="btn2 sm" onclick="mvRow('${g.id||''}',${i},1)">↓</button>
+    <button class="btn sm" onclick="rowItems('${s.id}')">Titles</button><button class="btn2 sm" onclick="rowForm('${s.id}')">Edit</button></div>`).join('')||'<p class="muted">Is tab me koi row nahi</p>')).join('')}`;
+}
+async function mvRow(cid,i,d){
+  const g=groups().find(x=>(x.id||'')===cid);const a=moved(g.list,i,d);if(!a)return;
+  try{await renumber('sections',a,r=>'id=eq.'+r.id);go('rows')}catch(e){err(e)}
+}
+function rowForm(id){
+  const s=(id&&S.sections.find(x=>x.id===id))||{name:'',layout:'GRID',rows_per_step:2,category_id:null,is_active:true};
+  const lay=['GRID','BIG_ROW'];if(s.layout&&!lay.includes(s.layout))lay.push(s.layout);
+  $('#main').innerHTML=`<button class="btn2 sm" onclick="go('rows')">← Back</button>
+  <h2>${id?'Edit row':'New row'}</h2>
+  <label for="r_n">Row ka naam</label><input id="r_n" value="${esc(s.name)}">
+  <label for="r_l">Layout</label><select id="r_l">${opt('GRID','GRID (3 column, More button)',s.layout==='GRID')}${opt('BIG_ROW','BIG_ROW (bade poster, side scroll)',s.layout==='BIG_ROW')}${lay.filter(x=>x!=='GRID'&&x!=='BIG_ROW').map(x=>opt(x,x,true)).join('')}</select>
+  <label for="r_p">Shuru me kitni line (GRID ke liye)</label><input id="r_p" type="number" min="1" value="${s.rows_per_step||2}">
+  <label for="r_c">Kis tab me</label><select id="r_c">${opt('','For You',!s.category_id)}${S.cats.map(c=>opt(c.id,c.name,c.id===s.category_id)).join('')}</select>
+  <label class="chk" style="margin-top:12px"><input type="checkbox" id="r_a" ${s.is_active?'checked':''}> Active</label>
+  <div class="row"><button class="btn" id="rsave" onclick="saveRow('${id||''}')">Save</button>${id?`<button class="del" onclick="delRow('${id}')">Delete</button>`:''}</div>`;
+}
+let rowBusy=false;
+async function saveRow(id){
+  if(rowBusy)return;
+  const name=val('r_n');if(!name){toast('Naam likho',true);return}
+  rowBusy=true;$('#rsave').disabled=true;
+  try{
+    const c=val('r_c')||null;
+    const p={name:name,layout:val('r_l'),rows_per_step:num(val('r_p'))||2,category_id:c,is_active:$('#r_a').checked};
+    if(id)await api('PATCH','sections?id=eq.'+id,p);
+    else{p.sort_order=S.sections.filter(s=>(s.category_id||null)===c).length;await api('POST','sections',p)}
+    toast('Saved ✓');rowBusy=false;go('rows');
+  }catch(e){err(e);rowBusy=false;$('#rsave')&&($('#rsave').disabled=false)}
+}
+async function delRow(id){
+  if(!confirm('Row delete karni hai? (titles delete nahi honge, sirf row hategi)'))return;
+  try{await api('DELETE','section_items?section_id=eq.'+id);await api('DELETE','sections?id=eq.'+id);toast('Deleted');go('rows')}catch(e){err(e)}
+}
+
+/* ---- titles inside a row ---- */
+let curRow=null;
+async function rowItems(id){
+  curRow=id;
+  const s=S.sections.find(x=>x.id===id);
+  const it=await q('section_items','section_id=eq.'+id+'&select=*&order=sort_order');
+  window._ri=it;
+  const have=new Set(it.map(x=>x.title_id));
+  const cand=S.titles.filter(t=>t.status==='published'&&!have.has(t.id));
+  $('#main').innerHTML=`<button class="btn2 sm" onclick="go('rows')">← Back</button>
+  <h2>${esc(s.name)}</h2><p class="muted">${esc(catName(s.category_id))} · ${esc(s.layout)}</p>
+  <div id="ril"></div>
+  <h3>Title jodo</h3>
+  <div class="bar"><select id="ri_t">${cand.map(t=>opt(t.id,t.name)).join('')}</select><button class="btn" onclick="addRowItem()">Add</button></div>`;
+  renderRI();
+}
+function renderRI(){
+  $('#ril').innerHTML=window._ri.map((x,i)=>{
+    const t=titleOf(x.title_id)||{name:'(draft/deleted)'};
+    return `<div class="item">${thumb(t.poster_key)}<div class="grow"><b>${esc(t.name)}</b><div class="muted">${i+1}</div></div><button class="btn2 sm" onclick="mvRI(${i},-1)">↑</button><button class="btn2 sm" onclick="mvRI(${i},1)">↓</button><button class="del sm" onclick="delRI('${x.title_id}')">X</button></div>`}).join('')||'<p class="muted">Is row me abhi koi title nahi</p>';
+}
+async function addRowItem(){
+  const t=val('ri_t');if(!t){toast('Title chuno',true);return}
+  try{await api('POST','section_items',{section_id:curRow,title_id:t,sort_order:window._ri.length});rowItems(curRow)}catch(e){err(e)}
+}
+async function mvRI(i,d){
+  const a=moved(window._ri,i,d);if(!a)return;
+  try{await renumber('section_items',a,r=>'section_id=eq.'+curRow+'&title_id=eq.'+r.title_id);window._ri=a;renderRI()}catch(e){err(e)}
+}
+async function delRI(tid){try{await api('DELETE','section_items?section_id=eq.'+curRow+'&title_id=eq.'+tid);rowItems(curRow)}catch(e){err(e)}}
+
+/* ================= POPULAR SEARCHES ================= */
+async function pgPopular(){
+  const p=await q('popular_searches','select=*&order=sort_order');
+  window._pp=p;
+  const have=new Set(p.map(x=>x.title_id));
+  const cand=S.titles.filter(t=>t.status==='published'&&!have.has(t.id));
+  $('#main').innerHTML=`<h2>Popular searches</h2><p class="muted">Search page me jo titles dikhte hain.</p><div id="pl"></div>
+  <h3>Title jodo</h3><div class="bar"><select id="pp_t">${cand.map(t=>opt(t.id,t.name)).join('')}</select><button class="btn" onclick="addPop()">Add</button></div>`;
+  renderPop();
+}
+function renderPop(){
+  $('#pl').innerHTML=window._pp.map((x,i)=>{
+    const t=titleOf(x.title_id)||{name:'(deleted)'};
+    return `<div class="item">${thumb(t.poster_key)}<div class="grow"><b>${i+1}. ${esc(t.name)}</b></div><button class="btn2 sm" onclick="mvPop(${i},-1)">↑</button><button class="btn2 sm" onclick="mvPop(${i},1)">↓</button><button class="del sm" onclick="delPop('${x.title_id}')">X</button></div>`}).join('')||'<p class="muted">Khali</p>';
+}
+async function addPop(){
+  const t=val('pp_t');if(!t)return;
+  try{await api('POST','popular_searches',{title_id:t,sort_order:window._pp.length});go('popular')}catch(e){err(e)}
+}
+async function mvPop(i,d){
+  const a=moved(window._pp,i,d);if(!a)return;
+  try{await renumber('popular_searches',a,r=>'title_id=eq.'+r.title_id);window._pp=a;renderPop()}catch(e){err(e)}
+}
+async function delPop(tid){try{await api('DELETE','popular_searches?title_id=eq.'+tid);go('popular')}catch(e){err(e)}}
+
+const PAGES={titles:pgTitles,banners:pgBanners,rows:pgRows,popular:pgPopular};
+
+/* ---------- boot ---------- */
+(function(){
+  $('#tk').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
+  if(tok()){
+    q('categories','select=id&limit=1').then(start).catch(()=>{$('#login').hidden=false})
+  }
+})();
+</script>
+</body>
+</html>
