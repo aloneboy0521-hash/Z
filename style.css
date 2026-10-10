@@ -1,0 +1,20 @@
+*{box-sizing:border-box}
+body{margin:0;background:#05050a;color:#e8e8f0;font:15px system-ui,sans-serif}
+#app{max-width:720px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:0 0 12px;background:linear-gradient(90deg,#20d9f5,#6845f5,#ff6b8a);-webkit-background-clip:text;color:transparent}
+h2{font-size:17px;margin:20px 0 8px}
+input,select,textarea{width:100%;padding:10px;margin:4px 0 10px;background:#12121c;color:#fff;border:1px solid #38334d;border-radius:8px;font-size:15px}
+textarea{min-height:70px}
+label{font-size:13px;color:#9a9aa8}
+button{padding:10px 16px;border:0;border-radius:8px;background:linear-gradient(90deg,#20d9f5,#6845f5,#d92dff);color:#fff;font-weight:600;font-size:14px}
+button.sec{background:#38334d}
+button.del{background:#7a1f2a}
+.row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px;margin:6px 0;background:#12121c;border-radius:8px}
+.row .info{flex:1;min-width:0}
+.mut{color:#9a9aa8;font-size:12px;word-break:break-all}
+.chips label{display:inline-block;margin:0 10px 8px 0;color:#e8e8f0;font-size:14px}
+.chips input{width:auto;margin:0 4px 0 0}
+.bar{display:flex;gap:8px;margin-bottom:12px}
+.msg{padding:8px 10px;border-radius:8px;background:#1f3a2a;margin-bottom:10px}
+.err{background:#4a1f2a}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
